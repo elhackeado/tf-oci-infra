@@ -1,0 +1,96 @@
+name: Terraform
+
+on:
+  push:
+    branches:
+      - main  # Trigger on push to the `main` branch
+  pull_request:
+    branches:
+      - main  # Optionally trigger on PRs targeting `main`
+
+jobs:
+  tf-plan:
+    runs-on: ubuntu-latest  # This job will run on an Ubuntu runner
+    outputs:
+      plan-file: ${{ steps.plan.outputs.plan-file }}  # Save plan output as an artifact
+
+    steps:
+      # Step 1: Checkout the code from the repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Terraform
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.3  # Specify the Terraform version
+      
+      # Step 3: Generate SSH key from secret
+      - name: Generate SSH Key
+        run: |
+          echo "${{ secrets.TF_PRIVATE_KEY }}" > ~/tf-oci-infra.pem
+          chmod 600 ~/tf-oci-infra.pem
+
+      # Step 4: Initialize Terraform with backend configuration
+      - name: Terraform Init
+        run: terraform init -backend-config="address=${{ secrets.TF_BACKEND_ADDRESS }}"
+
+      # Step 5: Terraform Plan
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -out=tfplan
+        # Output the plan to a file so we can use it in the next job
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.TF_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.TF_USER_OCID }}
+          TF_VAR_private_key_path: ~/tf-oci-infra.pem
+          TF_VAR_fingerprint: ${{ secrets.TF_FINGERPRINT }}
+
+      # Optional: Save the Terraform plan output as an artifact
+      - name: Upload Terraform Plan as Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: tf-plan
+          path: tfplan
+
+  tf-apply:
+    runs-on: ubuntu-latest  # This job will run on an Ubuntu runner
+    needs: tf-plan  # This job will only run if terraform-plan succeeds
+    if: github.ref == 'refs/heads/main'  # Ensure it runs only on the main branch
+    environment:
+      name: production  # Set an environment (optional)
+      url: ${{ steps.deploy.outputs.url }}  # Optional: you can output a URL to the environment
+
+    steps:
+      # Step 1: Checkout the code from the repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Terraform
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.3  # Specify the Terraform version
+      
+      # Step 3: Generate SSH key from secret
+      - name: Generate SSH Key
+        run: |
+          echo "${{ secrets.TF_PRIVATE_KEY }}" > ~/tf-oci-infra.pem
+          chmod 600 ~/tf-oci-infra.pem
+
+      # Step 4: Initialize Terraform with backend configuration
+      - name: Terraform Init
+        run: terraform init -backend-config="address=${{ secrets.TF_BACKEND_ADDRESS }}"
+
+      # Step 5: Terraform Apply (auto-approve)
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.TF_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.TF_USER_OCID }}
+          TF_VAR_private_key_path: ~/tf-oci-infra.pem
+          TF_VAR_fingerprint: ${{ secrets.TF_FINGERPRINT }}
+
+      # Optional: Output Terraform results (e.g., URL of deployed resource, if applicable)
+      - name: Terraform Output
+        run: terraform output
