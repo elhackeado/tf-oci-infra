@@ -66,23 +66,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Set up Terraform
+      # Step 2: Download the Terraform plan from the previous job
+      - name: Download Terraform Plan
+        uses: actions/download-artifact@v3
+        with:
+          name: tf-plan
+          path: .
+
+      # Step 3: Set up Terraform
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.10.3  # Specify the Terraform version
       
-      # Step 3: Generate SSH key from secret
+      # Step 4: Generate SSH key from secret
       - name: Generate SSH Key
         run: |
           echo "${{ secrets.TF_PRIVATE_KEY }}" > ~/tf-oci-infra.pem
           chmod 600 ~/tf-oci-infra.pem
 
-      # Step 4: Initialize Terraform with backend configuration
+      # Step 5: Initialize Terraform with backend configuration
       - name: Terraform Init
         run: terraform init -backend-config="address=${{ secrets.TF_BACKEND_ADDRESS }}"
 
-      # Step 5: Terraform Apply (auto-approve)
+      # Step 6: Terraform Apply (auto-approve)
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
         env:
